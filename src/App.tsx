@@ -2,16 +2,16 @@ import React, { useState } from "react";
 import { ParticleText } from "./ParticleText";
 
 export const App: React.FC = () => {
-  const [text, setText] = useState("Particle");
-  const [particleSize, setParticleSize] = useState(1.4);
-  const [density, setDensity] = useState(4);
-  const [mouseForce, setMouseForce] = useState(2400);
-  const [mouseRadius, setMouseRadius] = useState(120);
-  const [idleMotionStrength, setIdleMotionStrength] = useState(2);
-  const [idleMotionSpeed, setIdleMotionSpeed] = useState(0.0022);
-  const [chaosStrength, setChaosStrength] = useState(1);
-  const [innerChaosRadius, setInnerChaosRadius] = useState(0.45);
-  const [returnSpeed, setReturnSpeed] = useState(0.16);
+  const [text, setText] = useState("Mielec");
+  const [particleSize, setParticleSize] = useState(0.7);
+  const [density, setDensity] = useState(2);
+  const [mouseForce, setMouseForce] = useState(3350);
+  const [mouseRadius, setMouseRadius] = useState(130);
+  const [idleMotionStrength, setIdleMotionStrength] = useState(4.8);
+  const [idleMotionSpeed, setIdleMotionSpeed] = useState(0.002);
+  const [chaosStrength, setChaosStrength] = useState(2);
+  const [innerChaosRadius, setInnerChaosRadius] = useState(0.38);
+  const [returnSpeed, setReturnSpeed] = useState(0.19);
   const [maxDisplacement, setMaxDisplacement] = useState(24);
 
   return (
