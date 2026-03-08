@@ -90,7 +90,7 @@ const DEFAULTS: Required<
   >
 > = {
   text: "Particle",
-  fontSize: 160,
+  fontSize: 80,
   color: "#ffffff",
   particleSize: 1.4,
   density: 4,
