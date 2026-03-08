@@ -299,7 +299,7 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
       Math.min(
         containerWidth / sampleWidth,
         containerHeight / sampleHeight
-      ) * 0.1;
+      ) * 0.5;
       const translateX = (containerWidth - sampleWidth * scale) / 2;
       const translateY = (containerHeight - sampleHeight * scale) / 2;
 
