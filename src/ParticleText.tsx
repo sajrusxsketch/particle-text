@@ -141,17 +141,24 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
   const resolvedInnerChaosRadius =
     innerChaosRadius ?? DEFAULTS.innerChaosRadius;
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
+  const sampleSizeRef = useRef<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+  const containerSizeRef = useRef<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
   const mouseRef = useRef<MouseState>({ x: null, y: null });
   const animationFrameRef = useRef<number | null>(null);
   const timeRef = useRef(0);
 
   // Generate particles whenever text or layout props change.
+  // Particle positions are in "sample space" (text bounds).
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
     const dpr = window.devicePixelRatio || 1;
 
     // Measure text with an offscreen canvas so we can size and center correctly.
@@ -166,24 +173,24 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
     const metrics = offCtx.measureText(text);
     const textWidth = metrics.width;
 
-    const canvasWidth = Math.ceil(textWidth + padding * 2);
-    const canvasHeight = Math.ceil(fontSize + padding * 2);
+    const sampleWidth = Math.ceil(textWidth + padding * 2);
+    const sampleHeight = Math.ceil(fontSize + padding * 2);
 
     // Resize offscreen with final dimensions (resets context state).
-    offscreen.width = canvasWidth;
-    offscreen.height = canvasHeight;
+    offscreen.width = sampleWidth;
+    offscreen.height = sampleHeight;
     offCtx.font = font;
     offCtx.textBaseline = "middle";
     offCtx.textAlign = "center";
     offCtx.fillStyle = "#ffffff";
 
-    const textX = canvasWidth / 2;
-    const textY = canvasHeight / 2;
-    offCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+    const textX = sampleWidth / 2;
+    const textY = sampleHeight / 2;
+    offCtx.clearRect(0, 0, sampleWidth, sampleHeight);
     offCtx.fillText(text, textX, textY);
 
     // Sample only where the text pixels are drawn (alpha > threshold).
-    const imageData = offCtx.getImageData(0, 0, canvasWidth, canvasHeight);
+    const imageData = offCtx.getImageData(0, 0, sampleWidth, sampleHeight);
     const { data, width, height } = imageData;
 
     const particles: Particle[] = [];
@@ -211,24 +218,41 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
     }
 
     particlesRef.current = particles;
-
-    // Size and clear the visible canvas for animation rendering.
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    canvas.width = canvasWidth * dpr;
-    canvas.height = canvasHeight * dpr;
-    canvas.style.width = `${canvasWidth}px`;
-    canvas.style.height = `${canvasHeight}px`;
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    sampleSizeRef.current = { width: sampleWidth, height: sampleHeight };
 
     return () => {
       particlesRef.current = [];
     };
   }, [text, fontSize, density, padding]);
+
+  // Size canvas to match container and handle resize.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const dpr = window.devicePixelRatio || 1;
+
+    const resize = () => {
+      const w = Math.max(1, container.clientWidth);
+      const h = Math.max(1, container.clientHeight);
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      containerSizeRef.current = { width: w, height: h };
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    window.addEventListener("resize", resize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
 
   // Animation loop
   useEffect(() => {
@@ -239,16 +263,12 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const width = canvas.width / dpr;
-    const height = canvas.height / dpr;
 
     const friction = 0.84;
     const spring = resolvedReturnSpeed;
 
     // Mouse influence is fairly local but strong.
     const effectiveMouseRadius = mouseRadius * 0.9;
-    const innerChaosRadiusAbs =
-      effectiveMouseRadius * resolvedInnerChaosRadius;
     // Global scaling that keeps interaction soft but clearly visible.
     const mouseForceScale = 0.0013;
     const chaoticMaxDispMultiplier = 2.8;
@@ -256,6 +276,36 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
     const draw = () => {
       const particles = particlesRef.current;
       const mouse = mouseRef.current;
+      const { width: sampleWidth, height: sampleHeight } =
+        sampleSizeRef.current;
+      const { width: containerWidth, height: containerHeight } =
+        containerSizeRef.current;
+
+      if (
+        containerWidth < 1 ||
+        containerHeight < 1 ||
+        sampleWidth < 1 ||
+        sampleHeight < 1
+      ) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, containerWidth || 1, containerHeight || 1);
+        animationFrameRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      const scale = Math.min(
+        containerWidth / sampleWidth,
+        containerHeight / sampleHeight
+      );
+      const translateX = (containerWidth - sampleWidth * scale) / 2;
+      const translateY = (containerHeight - sampleHeight * scale) / 2;
+
+      if (!Number.isFinite(scale) || scale <= 0) {
+        animationFrameRef.current = requestAnimationFrame(draw);
+        return;
+      }
 
       // Advance a simple time value for animated noise.
       timeRef.current += 16;
@@ -263,8 +313,11 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, containerWidth, containerHeight);
 
-      ctx.clearRect(0, 0, width, height);
+      ctx.translate(translateX, translateY);
+      ctx.scale(scale, scale);
 
       if (!particles.length) {
         animationFrameRef.current = requestAnimationFrame(draw);
@@ -272,6 +325,8 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
       }
 
       ctx.fillStyle = color;
+
+      const sampleMargin = 2;
 
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
@@ -405,6 +460,15 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
           p.y = p.originY + dyBase * clamp;
         }
 
+        if (
+          p.x < -sampleMargin ||
+          p.x > sampleWidth + sampleMargin ||
+          p.y < -sampleMargin ||
+          p.y > sampleHeight + sampleMargin
+        ) {
+          continue;
+        }
+
         ctx.beginPath();
         ctx.arc(p.x, p.y, particleSize, 0, Math.PI * 2);
         ctx.fill();
@@ -436,18 +500,41 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
     particleSize,
   ]);
 
-  // Mouse interaction handlers.
+  // Mouse interaction handlers. Use same container size and transform as draw.
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const scaleX = canvas.width / dpr / rect.width;
-    const scaleY = canvas.height / dpr / rect.height;
+    const { width: containerWidth, height: containerHeight } =
+      containerSizeRef.current;
+    const { width: sampleWidth, height: sampleHeight } =
+      sampleSizeRef.current;
 
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
+    if (
+      containerWidth < 1 ||
+      containerHeight < 1 ||
+      sampleWidth < 1 ||
+      sampleHeight < 1
+    )
+      return;
+
+    const scale = Math.min(
+      containerWidth / sampleWidth,
+      containerHeight / sampleHeight
+    );
+    const translateX = (containerWidth - sampleWidth * scale) / 2;
+    const translateY = (containerHeight - sampleHeight * scale) / 2;
+
+    const displayW = rect.width;
+    const displayH = rect.height;
+    const mouseX =
+      displayW > 0 ? ((event.clientX - rect.left) / displayW) * containerWidth : 0;
+    const mouseY =
+      displayH > 0 ? ((event.clientY - rect.top) / displayH) * containerHeight : 0;
+
+    const x = (mouseX - translateX) / scale;
+    const y = (mouseY - translateY) / scale;
 
     mouseRef.current = { x, y };
   };
@@ -458,9 +545,11 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
 
   return (
     <div
+      ref={containerRef}
       className={className}
       style={{
-        display: "inline-block",
+        width: "100%",
+        height: "100%",
         ...style,
       }}
     >
@@ -468,6 +557,7 @@ export const ParticleText: React.FC<ParticleTextProps> = (props) => {
         ref={canvasRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        style={{ display: "block" }}
       />
     </div>
   );
