@@ -1,0 +1,5 @@
+const scale =
+  Math.min(
+    containerWidth / sampleWidth,
+    containerHeight / sampleHeight
+  ) * 0.45;
